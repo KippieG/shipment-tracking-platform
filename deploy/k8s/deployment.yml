@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipment-tracking-api
+  namespace: logistics
+  labels:
+    app: shipment-tracking-api
+    version: "1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipment-tracking-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: shipment-tracking-api
+    spec:
+      containers:
+        - name: api
+          image: shipment-tracking-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: shipment-secrets
+                  key: db-connection-string
+            - name: JwtSettings__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: shipment-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipment-tracking-api
+  namespace: logistics
+spec:
+  selector:
+    app: shipment-tracking-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shipment-tracking-ingress
+  namespace: logistics
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+    - host: api.shipmenttracking.be
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: shipment-tracking-api
+                port:
+                  number: 80
