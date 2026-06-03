@@ -137,12 +137,13 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// ── Auto-migratie bij startup (dev only) ─────────────────────────────────────
+// ── Auto-migratie bij startup (dev only, niet in-memory) ─────────────────────
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await dbContext.Database.MigrateAsync();
+    if (dbContext.Database.IsRelational())
+        await dbContext.Database.MigrateAsync();
 }
 
 await app.RunAsync();
