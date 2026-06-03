@@ -1,17 +1,43 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ShipmentTracking.Application.Features.Shipments.Commands.CreateShipment;
 using ShipmentTracking.Application.Features.Shipments.Queries.GetShipments;
 using ShipmentTracking.Infrastructure.Persistence;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using Xunit;
 
 namespace ShipmentTracking.Tests.Integration;
+
+// Vervangt JWT-authenticatie door een handler die altijd slaagt
+public sealed class TestAuthHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
+            new Claim(ClaimTypes.Name, "testuser"),
+        };
+        var identity = new ClaimsIdentity(claims, "Test");
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, "Test");
+        return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+}
 
 // Vervangt de echte database door een in-memory versie
 public sealed class ShipmentTrackingFactory : WebApplicationFactory<Program>
@@ -34,6 +60,15 @@ public sealed class ShipmentTrackingFactory : WebApplicationFactory<Program>
             using var scope = sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             db.Database.EnsureCreated();
+
+            // Vervang JWT-auth door test-scheme dat altijd authenticeert
+            services.Configure<AuthenticationOptions>(o =>
+            {
+                o.DefaultAuthenticateScheme = "Test";
+                o.DefaultChallengeScheme = "Test";
+            });
+            services.AddAuthentication()
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
         });
 
         builder.UseEnvironment("Development");
