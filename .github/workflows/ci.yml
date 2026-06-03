@@ -28,13 +28,9 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore ShipmentTracking.sln
 
-      - name: Build (Release)
-        run: dotnet build ShipmentTracking.sln --no-restore --configuration Release
-
       - name: Unit tests
         run: |
           dotnet test tests/Unit/Unit.csproj \
-            --no-build \
             --configuration Release \
             --logger "trx;LogFileName=unit-results.trx" \
             --collect:"XPlat Code Coverage" \
@@ -43,7 +39,6 @@ jobs:
       - name: Integration tests
         run: |
           dotnet test tests/Integration/Integration.csproj \
-            --no-build \
             --configuration Release \
             --logger "trx;LogFileName=integration-results.trx" \
             --results-directory ./coverage
