@@ -53,13 +53,14 @@ public sealed class ShipmentTests
     {
         // Arrange
         var shipment = CreateShipmentWithStatus(from);
+        var countBefore = shipment.StatusHistory.Count;
 
         // Act
         shipment.UpdateStatus(to, "Test notitie", "testuser");
 
         // Assert
         shipment.Status.Should().Be(to);
-        shipment.StatusHistory.Should().HaveCount(2); // Create + UpdateStatus
+        shipment.StatusHistory.Should().HaveCount(countBefore + 1);
     }
 
     [Theory]
