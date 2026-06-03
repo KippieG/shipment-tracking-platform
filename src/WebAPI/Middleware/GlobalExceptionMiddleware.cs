@@ -1,4 +1,5 @@
 using FluentValidation;
+using ShipmentTracking.Application.Common.Interfaces;
 using ShipmentTracking.Domain.Exceptions;
 using System.Net;
 using System.Text.Json;
