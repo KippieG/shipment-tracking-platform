@@ -31,6 +31,7 @@ public sealed class TestAuthHandler(
         {
             new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
             new Claim(ClaimTypes.Name, "testuser"),
+            new Claim(ClaimTypes.Role, "Dispatcher"),
         };
         var identity = new ClaimsIdentity(claims, "Test");
         var principal = new ClaimsPrincipal(identity);
@@ -113,6 +114,21 @@ public sealed class ShipmentsEndpointTests(ShipmentTrackingFactory factory)
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task POST_CreateShipment_WithSameIdempotencyKey_ReplaysOriginalResponse()
+    {
+        var command = new CreateShipmentCommand("Sender", "Address", "Recipient", "Address", "Idempotent package", 1m);
+        using var first = new HttpRequestMessage(HttpMethod.Post, "/api/shipments") { Content = JsonContent.Create(command) };
+        first.Headers.Add("Idempotency-Key", "a3f8c257-caa1-4c22-8050-1980e94a98e5");
+        var firstResponse = await _client.SendAsync(first);
+        using var retry = new HttpRequestMessage(HttpMethod.Post, "/api/shipments") { Content = JsonContent.Create(command) };
+        retry.Headers.Add("Idempotency-Key", "a3f8c257-caa1-4c22-8050-1980e94a98e5");
+        var retryResponse = await _client.SendAsync(retry);
+
+        retryResponse.StatusCode.Should().Be(firstResponse.StatusCode);
+        retryResponse.Headers.GetValues("Idempotency-Replayed").Should().ContainSingle().Which.Should().Be("true");
     }
 
     [Fact]

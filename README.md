@@ -8,13 +8,15 @@ Production-minded .NET 8 platform for creating, tracking and auditing logistics 
 
 - ASP.NET Core 8 API, CQRS/MediatR, FluentValidation and EF Core SQL Server
 - JWT authentication, global error responses and soft deletion
-- Azure Blob Storage document abstraction and Azure Service Bus publisher
-- Background Service Bus consumer with structured logs and safe local fallback
+- Identity registration/login, password policy, roles and policy-protected write endpoints
+- Azure Blob Storage document abstraction and transactional Service Bus outbox
+- Background outbox publisher with retry metadata; Service Bus dead-lettering is enabled in IaC
 - Redis-backed shipment-detail cache with invalidation on writes
 - `Idempotency-Key` support for shipment POSTs; successful responses are replayed safely
-- OpenTelemetry/Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is configured
+- OpenTelemetry/Application Insights with idempotency replay/conflict metrics
 - `/health` and `/ready` endpoints
-- Unit tests, HTTP integration tests and a SQL Server Testcontainers test
+- Upload signature validation; production deployments should additionally enable Defender for Storage malware scanning
+- Unit tests, HTTP integration tests, idempotency coverage and a SQL Server Testcontainers test
 - Docker Compose for SQL Server, Redis, Azurite and the API
 
 ## Architecture
@@ -50,7 +52,7 @@ dotnet run --project src/WebAPI
 
 ## Configuration
 
-Use environment variables or user secrets; do not commit production credentials.
+Use environment variables, Key Vault or user secrets; do not commit production credentials. Set `KeyVault__Uri` in Azure to load secrets using the Container App managed identity.
 
 | Setting | Purpose |
 |---|---|
@@ -84,7 +86,9 @@ The Testcontainers test starts an isolated SQL Server container, so Docker must 
 
 ## CI/CD and deployment
 
-The GitHub Actions workflow restores, builds, runs the test suite (including Testcontainers) and validates the production Docker image on every push and pull request. A manual `workflow_dispatch` deployment job builds the same image, pushes it to Azure Container Registry and updates an Azure Container App. Configure `AZURE_CREDENTIALS`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_NAME` and `AZURE_ACR_NAME` as repository secrets/variables before using it.
+The GitHub Actions workflow restores, builds, runs the test suite (including Testcontainers) and validates the production Docker image on every push and pull request. A manual `workflow_dispatch` deployment job builds the same image, pushes it to Azure Container Registry and updates an Azure Container App. It uses GitHub-to-Azure OIDC: configure `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_NAME` and `AZURE_ACR_NAME` as repository variables, then federate the GitHub environment in Entra ID.
+
+The infrastructure is declared in [infra/main.bicep](infra/main.bicep). Deployment and recovery procedures are in [docs/runbook.md](docs/runbook.md); the reliability design is in [docs/architecture.md](docs/architecture.md).
 
 ## Key decisions
 
@@ -92,4 +96,4 @@ The GitHub Actions workflow restores, builds, runs the test suite (including Tes
 - **CQRS:** request handlers keep shipment commands and read models isolated.
 - **Idempotency at the HTTP boundary:** retry safety is persisted with a unique request scope/key constraint.
 - **Cache-aside:** shipment details are cached for five minutes and invalidated after status changes.
-- **Async events:** publishing and consuming Service Bus messages are separated from HTTP request processing.
+- **Transactional outbox:** publishing is separated from HTTP processing without losing events when Service Bus is unavailable.

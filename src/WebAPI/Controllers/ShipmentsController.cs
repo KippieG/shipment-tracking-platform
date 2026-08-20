@@ -51,6 +51,7 @@ public sealed class ShipmentsController(IMediator mediator) : ControllerBase
     /// Maakt een nieuwe zending aan.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Dispatcher,Administrator")]
     [ProducesResponseType(typeof(CreateShipmentResult), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create(
@@ -65,6 +66,7 @@ public sealed class ShipmentsController(IMediator mediator) : ControllerBase
     /// Werkt de status van een zending bij.
     /// </summary>
     [HttpPut("{id:guid}/status")]
+    [Authorize(Roles = "Dispatcher,Driver,Administrator")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

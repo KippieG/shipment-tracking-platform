@@ -46,13 +46,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - uses: azure/docker-login@v2
-        with:
-          login-server: ${{ vars.AZURE_ACR_NAME }}.azurecr.io
-          username: ${{ secrets.AZURE_ACR_USERNAME }}
-          password: ${{ secrets.AZURE_ACR_PASSWORD }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - run: |
+          az acr login --name ${{ vars.AZURE_ACR_NAME }}
           docker build --file src/WebAPI/Dockerfile --tag ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }} .
           docker push ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }}
           az containerapp update --name ${{ vars.AZURE_CONTAINER_APP_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --image ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }}

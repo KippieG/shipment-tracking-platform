@@ -32,9 +32,9 @@ public interface IBlobStorageService
     Task DeleteAsync(string blobUri, CancellationToken ct = default);
 }
 
-public interface IShipmentEventPublisher
+public interface IOutboxWriter
 {
-    Task PublishStatusChangedAsync(Guid shipmentId, string trackingNumber, string newStatus, CancellationToken ct = default);
+    Task EnqueueShipmentStatusChangedAsync(Guid shipmentId, string trackingNumber, string newStatus, CancellationToken ct = default);
 }
 
 /// <summary>Small abstraction so the application layer is not coupled to Redis.</summary>

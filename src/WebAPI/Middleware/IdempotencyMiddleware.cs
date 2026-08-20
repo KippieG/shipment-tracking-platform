@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ShipmentTracking.Infrastructure.Persistence;
 using System.Security.Cryptography;
 using System.Text;
+using ShipmentTracking.WebAPI.Observability;
 
 namespace ShipmentTracking.WebAPI.Middleware;
 
@@ -45,11 +46,13 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
             if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(existing.RequestHash), Encoding.UTF8.GetBytes(hash)))
             {
                 context.Response.StatusCode = StatusCodes.Status409Conflict;
+                Telemetry.IdempotencyConflicts.Add(1);
                 await context.Response.WriteAsJsonAsync(new { title = "Idempotency-Key werd al voor een ander request gebruikt." });
                 return;
             }
 
             context.Response.StatusCode = existing.StatusCode;
+            Telemetry.IdempotencyReplays.Add(1);
             context.Response.ContentType = "application/json";
             context.Response.Headers.Append("Idempotency-Replayed", "true");
             await context.Response.WriteAsync(existing.ResponseBody, context.RequestAborted);
@@ -73,7 +76,11 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         catch (DbUpdateException ex)
         {
             logger.LogWarning(ex, "Concurrent idempotency key detected for {Scope}", scope);
-            throw;
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            Telemetry.IdempotencyConflicts.Add(1);
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { title = "Hetzelfde Idempotency-Key request wordt al verwerkt." });
         }
         finally
         {

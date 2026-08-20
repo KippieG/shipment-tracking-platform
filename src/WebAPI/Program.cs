@@ -14,11 +14,23 @@ using ShipmentTracking.Infrastructure.Services.Azure;
 using ShipmentTracking.WebAPI.Middleware;
 using System.Reflection;
 using System.Text;
+using Asp.Versioning;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using Azure.Identity;
 using ShipmentTracking.Infrastructure.Services.Caching;
+using ShipmentTracking.Infrastructure.Services.Messaging;
+using ShipmentTracking.Infrastructure.Services.Storage;
 using ShipmentTracking.WebAPI.BackgroundServices;
+using ShipmentTracking.WebAPI.Observability;
+using OpenTelemetry.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var keyVaultUri = builder.Configuration["KeyVault:Uri"];
+if (!string.IsNullOrWhiteSpace(keyVaultUri))
+    builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), new DefaultAzureCredential());
 
 // ── Serilog ──────────────────────────────────────────────────────────────────
 Log.Logger = new LoggerConfiguration()
@@ -62,11 +74,11 @@ builder.Services.AddScoped<IShipmentRepository, ShipmentRepository>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 
 // ── Azure Services ───────────────────────────────────────────────────────────
-builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
-if (string.IsNullOrWhiteSpace(builder.Configuration["Azure:ServiceBus:ConnectionString"]))
-    builder.Services.AddSingleton<IShipmentEventPublisher, NoopShipmentEventPublisher>();
+if (string.IsNullOrWhiteSpace(builder.Configuration["Azure:BlobStorage:ConnectionString"]))
+    builder.Services.AddSingleton<IBlobStorageService, LocalBlobStorageService>();
 else
-    builder.Services.AddSingleton<IShipmentEventPublisher, ServiceBusPublisher>();
+    builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
+builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
 builder.Services.AddHostedService<ShipmentEventsWorker>();
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -90,6 +102,27 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = true;
+        options.Password.RequireNonAlphanumeric = true;
+        options.User.RequireUniqueEmail = true;
+    })
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<ApplicationDbContext>();
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+});
+builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter("api", limiter =>
+{
+    limiter.PermitLimit = 120;
+    limiter.Window = TimeSpan.FromMinutes(1);
+    limiter.QueueLimit = 0;
+}));
 
 // ── Swagger ───────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -133,7 +166,9 @@ builder.Services.AddHealthChecks().AddDbContextCheck<ApplicationDbContext>("sql"
 
 // Application Insights exports traces, dependency telemetry and request metrics when configured.
 if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-    builder.Services.AddOpenTelemetry().UseAzureMonitor();
+    builder.Services.AddOpenTelemetry()
+        .WithMetrics(metrics => metrics.AddMeter(Telemetry.Meter.Name))
+        .UseAzureMonitor();
 
 // ─────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
@@ -154,9 +189,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
+app.MapControllers().RequireRateLimiting("api");
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/ready");
 
@@ -173,6 +209,15 @@ if (app.Environment.IsDevelopment())
         else
             await dbContext.Database.EnsureCreatedAsync();
     }
+
+}
+
+// Roles are application data, not a development-only concern. Migrations are run separately in production.
+using (var roleScope = app.Services.CreateScope())
+{
+    var roleManager = roleScope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    foreach (var role in new[] { "Customer", "Dispatcher", "Driver", "Administrator" })
+        if (!await roleManager.RoleExistsAsync(role)) await roleManager.CreateAsync(new IdentityRole(role));
 }
 
 await app.RunAsync();

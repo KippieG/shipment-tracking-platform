@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShipmentTracking.Application.Common.Interfaces;
 using ShipmentTracking.Application.Features.Documents.Commands.UploadDocument;
+using ShipmentTracking.WebAPI.Security;
 
 namespace ShipmentTracking.WebAPI.Controllers;
 
@@ -33,6 +34,8 @@ public sealed class DocumentsController(
     {
         if (file.Length == 0)
             return BadRequest("Bestand is leeg.");
+        if (!await FileSignatureValidator.MatchesDeclaredTypeAsync(file, ct))
+            return BadRequest("Bestandinhoud komt niet overeen met het opgegeven type.");
 
         await using var stream = file.OpenReadStream();
 

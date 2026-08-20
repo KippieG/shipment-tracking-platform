@@ -2,13 +2,22 @@ using System.Net.Http.Json;
 
 namespace ShipmentApp.Maui.Services;
 
-public sealed class ShipmentApiService(HttpClient httpClient)
+public sealed class ShipmentApiService(HttpClient httpClient, OfflineShipmentStore offlineStore)
 {
     public async Task<PagedResult<ShipmentSummaryDto>?> GetShipmentsAsync(
         int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        return await httpClient.GetFromJsonAsync<PagedResult<ShipmentSummaryDto>>(
-            $"api/shipments?page={page}&pageSize={pageSize}", ct);
+        try
+        {
+            var result = await httpClient.GetFromJsonAsync<PagedResult<ShipmentSummaryDto>>(
+                $"api/shipments?page={page}&pageSize={pageSize}", ct);
+            if (result is not null) await offlineStore.SaveAsync(result, ct);
+            return result;
+        }
+        catch (HttpRequestException)
+        {
+            return await offlineStore.GetAsync(ct);
+        }
     }
 
     public async Task<ShipmentDetailDto?> GetShipmentAsync(Guid id, CancellationToken ct = default)

@@ -84,3 +84,16 @@ public sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<Id
         builder.ToTable("IdempotencyRecords");
     }
 }
+
+public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage>
+{
+    public void Configure(EntityTypeBuilder<OutboxMessage> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Type).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Payload).IsRequired();
+        builder.Property(x => x.LastError).HasMaxLength(2000);
+        builder.HasIndex(x => new { x.ProcessedAt, x.OccurredAt });
+        builder.ToTable("OutboxMessages");
+    }
+}

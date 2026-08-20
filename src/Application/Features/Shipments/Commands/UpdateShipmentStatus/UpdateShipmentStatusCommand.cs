@@ -22,7 +22,7 @@ public sealed class UpdateShipmentStatusValidator : AbstractValidator<UpdateShip
 
 public sealed class UpdateShipmentStatusHandler(
     IShipmentRepository repository,
-    IShipmentEventPublisher eventPublisher,
+    IOutboxWriter outbox,
     ICurrentUserService currentUser,
     IShipmentCache cache)
     : IRequestHandler<UpdateShipmentStatusCommand>
@@ -33,15 +33,11 @@ public sealed class UpdateShipmentStatusHandler(
             ?? throw new ShipmentNotFoundException(command.ShipmentId);
 
         shipment.UpdateStatus(command.NewStatus, command.Notes, currentUser.UserName);
+        // The outbox row and shipment status are written by the same DbContext transaction.
+        await outbox.EnqueueShipmentStatusChangedAsync(shipment.Id, shipment.TrackingNumber, command.NewStatus.ToString(), ct);
         await repository.SaveChangesAsync(ct);
         await cache.RemoveAsync($"shipments:detail:{shipment.Id:N}", ct);
         await cache.RemoveAsync("shipments:list", ct);
 
-        // Publiceer event naar Azure Service Bus
-        await eventPublisher.PublishStatusChangedAsync(
-            shipment.Id,
-            shipment.TrackingNumber,
-            command.NewStatus.ToString(),
-            ct);
     }
 }
