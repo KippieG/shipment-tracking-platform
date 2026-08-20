@@ -12,12 +12,15 @@ public sealed class CreateShipmentHandlerTests
 {
     private readonly Mock<IShipmentRepository> _repositoryMock = new();
     private readonly Mock<ICurrentUserService> _currentUserMock = new();
+    private readonly Mock<IShipmentCache> _cacheMock = new();
     private readonly CreateShipmentHandler _handler;
 
     public CreateShipmentHandlerTests()
     {
         _currentUserMock.Setup(u => u.UserName).Returns("testuser");
-        _handler = new CreateShipmentHandler(_repositoryMock.Object, _currentUserMock.Object);
+        _cacheMock.Setup(c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _handler = new CreateShipmentHandler(_repositoryMock.Object, _currentUserMock.Object, _cacheMock.Object);
     }
 
     [Fact]

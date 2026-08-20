@@ -70,3 +70,17 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.ToTable("Documents");
     }
 }
+
+public sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<IdempotencyRecord>
+{
+    public void Configure(EntityTypeBuilder<IdempotencyRecord> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Scope).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ResponseBody).IsRequired();
+        builder.HasIndex(x => new { x.Scope, x.Key }).IsUnique();
+        builder.ToTable("IdempotencyRecords");
+    }
+}

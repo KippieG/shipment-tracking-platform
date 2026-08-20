@@ -2,6 +2,7 @@ using MediatR;
 using ShipmentTracking.Application.Common.Interfaces;
 using ShipmentTracking.Domain.Enums;
 using ShipmentTracking.Domain.Exceptions;
+using System.Text.Json;
 
 namespace ShipmentTracking.Application.Features.Shipments.Queries.GetShipment;
 
@@ -42,15 +43,23 @@ public sealed record DocumentDto(
     DateTime UploadedAt);
 
 // --- Handler ---
-public sealed class GetShipmentHandler(IShipmentRepository repository)
+public sealed class GetShipmentHandler(IShipmentRepository repository, IShipmentCache cache)
     : IRequestHandler<GetShipmentQuery, ShipmentDetailDto>
 {
     public async Task<ShipmentDetailDto> Handle(GetShipmentQuery query, CancellationToken ct)
     {
+        var cacheKey = $"shipments:detail:{query.ShipmentId:N}";
+        var cached = await cache.GetAsync(cacheKey, ct);
+        if (cached is not null)
+        {
+            var dto = JsonSerializer.Deserialize<ShipmentDetailDto>(cached);
+            if (dto is not null) return dto;
+        }
+
         var shipment = await repository.GetByIdWithDetailsAsync(query.ShipmentId, ct)
             ?? throw new ShipmentNotFoundException(query.ShipmentId);
 
-        return new ShipmentDetailDto(
+        var result = new ShipmentDetailDto(
             shipment.Id,
             shipment.TrackingNumber,
             shipment.SenderName,
@@ -73,5 +82,8 @@ public sealed class GetShipmentHandler(IShipmentRepository repository)
                 .Select(d => new DocumentDto(
                     d.Id, d.FileName, d.ContentType, d.FileSizeBytes, d.UploadedBy, d.UploadedAt))
                 .ToList());
+
+        await cache.SetAsync(cacheKey, JsonSerializer.Serialize(result), TimeSpan.FromMinutes(5), ct);
+        return result;
     }
 }

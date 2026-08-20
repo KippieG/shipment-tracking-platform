@@ -1,22 +1,43 @@
-version: '3.9'
-
 services:
   sql:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: shipment-sql
     environment:
       ACCEPT_EULA: "Y"
-      SA_PASSWORD: "Dev@12345!"
+      SA_PASSWORD: ${SQL_SA_PASSWORD:-Dev@12345!}
       MSSQL_PID: "Developer"
     ports:
       - "1433:1433"
     volumes:
       - sqldata:/var/opt/mssql
     healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "Dev@12345!" -Q "SELECT 1" || exit 1
+      test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U SA -P "${SQL_SA_PASSWORD:-Dev@12345!}" -Q "SELECT 1" || exit 1
       interval: 10s
       timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: shipment-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
       retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+    container_name: shipment-azurite
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000
+    ports:
+      - "10000:10000"
+    volumes:
+      - azuritedata:/data
 
   api:
     build:
@@ -24,13 +45,24 @@ services:
       dockerfile: src/WebAPI/Dockerfile
     container_name: shipment-api
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=sql;Database=ShipmentDb;User Id=sa;Password=Dev@12345!;TrustServerCertificate=true
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Server=sql;Database=ShipmentDb;User Id=sa;Password=${SQL_SA_PASSWORD:-Dev@12345!};TrustServerCertificate=true
+      Redis__ConnectionString: redis:6379
+      JwtSettings__Secret: ${JWT_SECRET:-development-only-secret-change-before-production-123456}
     ports:
       - "5001:8080"
     depends_on:
       sql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health > /dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
 volumes:
   sqldata:
+  redisdata:
+  azuritedata:

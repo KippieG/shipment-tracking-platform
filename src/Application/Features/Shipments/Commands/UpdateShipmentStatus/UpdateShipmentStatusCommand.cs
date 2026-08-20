@@ -23,7 +23,8 @@ public sealed class UpdateShipmentStatusValidator : AbstractValidator<UpdateShip
 public sealed class UpdateShipmentStatusHandler(
     IShipmentRepository repository,
     IShipmentEventPublisher eventPublisher,
-    ICurrentUserService currentUser)
+    ICurrentUserService currentUser,
+    IShipmentCache cache)
     : IRequestHandler<UpdateShipmentStatusCommand>
 {
     public async Task Handle(UpdateShipmentStatusCommand command, CancellationToken ct)
@@ -33,6 +34,8 @@ public sealed class UpdateShipmentStatusHandler(
 
         shipment.UpdateStatus(command.NewStatus, command.Notes, currentUser.UserName);
         await repository.SaveChangesAsync(ct);
+        await cache.RemoveAsync($"shipments:detail:{shipment.Id:N}", ct);
+        await cache.RemoveAsync("shipments:list", ct);
 
         // Publiceer event naar Azure Service Bus
         await eventPublisher.PublishStatusChangedAsync(

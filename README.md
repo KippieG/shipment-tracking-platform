@@ -1,229 +1,95 @@
 # Shipment Tracking Platform
 
-Een volledig uitgewerkt .NET 8 platform voor het digitaliseren en opvolgen van logistieke zendingen.  
-Gebouwd met **Clean Architecture**, **CQRS via MediatR**, **Azure-integraties** en een **.NET MAUI** mobiele client.
+[![CI](https://github.com/phlppgdfry/shipment-tracking-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/phlppgdfry/shipment-tracking-platform/actions/workflows/ci.yml)
 
----
+Production-minded .NET 8 platform for creating, tracking and auditing logistics shipments. The API follows Clean Architecture and CQRS, while local infrastructure mirrors the Azure services used in deployment.
 
-## Architectuur
+## What is implemented
 
+- ASP.NET Core 8 API, CQRS/MediatR, FluentValidation and EF Core SQL Server
+- JWT authentication, global error responses and soft deletion
+- Azure Blob Storage document abstraction and Azure Service Bus publisher
+- Background Service Bus consumer with structured logs and safe local fallback
+- Redis-backed shipment-detail cache with invalidation on writes
+- `Idempotency-Key` support for shipment POSTs; successful responses are replayed safely
+- OpenTelemetry/Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is configured
+- `/health` and `/ready` endpoints
+- Unit tests, HTTP integration tests and a SQL Server Testcontainers test
+- Docker Compose for SQL Server, Redis, Azurite and the API
+
+## Architecture
+
+```text
+MAUI / HTTP clients
+        |
+ASP.NET Core API ── MediatR CQRS ── Domain
+        |                 |
+ SQL Server       Redis cache / Service Bus worker / Blob Storage
+        |
+Application Insights (traces, metrics and dependencies)
 ```
-┌─────────────────────────────────────────────────────────┐
-│                        Clients                          │
-│  REST / Swagger      .NET MAUI App     Webhook consumer │
-└──────────────┬───────────────┬──────────────────────────┘
-               │               │
-┌──────────────▼───────────────▼──────────────────────────┐
-│               ASP.NET Core 8 WebAPI                     │
-│         Controllers · JWT Auth · Serilog                │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐ │
-│  │    Domain    │ │ Application  │ │ Infrastructure   │ │
-│  │  Entities    │ │  MediatR     │ │  EF Core / SQL   │ │
-│  │  Enums       │ │  CQRS        │ │  Azure Services  │ │
-│  │  Value Obj.  │ │  Validators  │ │  Repositories    │ │
-│  └──────────────┘ └──────────────┘ └──────────────────┘ │
-└──────────────────────────────────┬──────────────────────┘
-                                   │
-┌──────────────────────────────────▼──────────────────────┐
-│                     Azure                               │
-│  Azure SQL DB    Service Bus    Blob Storage  Key Vault │
-└─────────────────────────────────────────────────────────┘
-```
 
----
+## Run locally
 
-## Tech Stack
-
-| Laag | Technologie |
-|------|-------------|
-| API | ASP.NET Core 8, C# 12 |
-| CQRS | MediatR 12 |
-| Validatie | FluentValidation |
-| ORM | Entity Framework Core 8 |
-| Database | Azure SQL / SQL Server |
-| Messaging | Azure Service Bus |
-| Opslag | Azure Blob Storage |
-| Auth | JWT Bearer tokens |
-| Logging | Serilog → Azure Application Insights |
-| Tests | xUnit, Moq, FluentAssertions, WebApplicationFactory |
-| Mobile | .NET MAUI |
-| CI/CD | GitHub Actions |
-
----
-
-## Aan de slag
-
-### Vereisten
-- .NET 8 SDK
-- Docker (voor lokale SQL Server)
-- Azure subscription (optioneel — lokale emulators werken ook)
-
-### Lokaal opstarten
+Prerequisites: Docker Desktop and .NET 8 SDK.
 
 ```bash
-# 1. Kloon de repo
-git clone https://github.com/jouw-naam/shipment-tracking-platform.git
+git clone https://github.com/phlppgdfry/shipment-tracking-platform.git
 cd shipment-tracking-platform
+cp .env.example .env
+docker compose up --build
+```
 
-# 2. Start SQL Server via Docker
-docker run -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=Dev@12345!" \
-  -p 1433:1433 --name sql-dev -d mcr.microsoft.com/mssql/server:2022-latest
+The API is available at `http://localhost:5001`; Swagger is at `/swagger` in the Development environment. Compose starts SQL Server, Redis and Azurite. The API creates the local schema on first start. Change all `.env` defaults before exposing any environment beyond your machine.
 
-# 3. Pas de connection string aan in appsettings.Development.json
+For a host-run API, start the infrastructure with `docker compose up sql redis azurite -d`, then run:
 
-# 4. Run migraties
-dotnet ef database update --project src/Infrastructure --startup-project src/WebAPI
-
-# 5. Start de API
+```bash
 dotnet run --project src/WebAPI
-
-# 6. Open Swagger
-# https://localhost:5001/swagger
 ```
 
-### Environment variables
+## Configuration
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=ShipmentDb;User Id=sa;Password=Dev@12345!;TrustServerCertificate=true"
-  },
-  "JwtSettings": {
-    "Secret": "jouw-super-geheime-jwt-sleutel-minimaal-32-chars",
-    "Issuer": "ShipmentTrackingPlatform",
-    "Audience": "ShipmentTrackingClients",
-    "ExpiryMinutes": 60
-  },
-  "Azure": {
-    "ServiceBus": {
-      "ConnectionString": "",
-      "ShipmentEventsQueue": "shipment-events"
-    },
-    "BlobStorage": {
-      "ConnectionString": "",
-      "DocumentsContainer": "shipment-documents"
-    }
-  }
-}
+Use environment variables or user secrets; do not commit production credentials.
+
+| Setting | Purpose |
+|---|---|
+| `ConnectionStrings__DefaultConnection` | SQL Server connection string |
+| `Redis__ConnectionString` | Redis endpoint; falls back to in-memory cache locally |
+| `Azure__ServiceBus__ConnectionString` | Enables Service Bus publishing and worker consumption |
+| `Azure__BlobStorage__ConnectionString` | Blob Storage/Azurite connection string |
+| `JwtSettings__Secret` | 32+ character JWT signing secret |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Enables Azure Monitor OpenTelemetry export |
+
+## API conventions
+
+All shipment endpoints require a bearer token. Create a shipment with an idempotency key to make client retries safe:
+
+```http
+POST /api/shipments
+Authorization: Bearer <token>
+Idempotency-Key: 4e7280ab-0996-46ca-94e1-2b4d7b1aa0d0
+Content-Type: application/json
 ```
 
----
+Reusing the same key and payload returns the original successful response with `Idempotency-Replayed: true`; reusing it with a different payload returns `409 Conflict`.
 
-## API Endpoints
+## Tests
 
-### Shipments
-| Method | Endpoint | Beschrijving |
-|--------|----------|--------------|
-| `POST` | `/api/shipments` | Nieuwe zending aanmaken |
-| `GET` | `/api/shipments` | Lijst van zendingen (gefilterd) |
-| `GET` | `/api/shipments/{id}` | Detail van één zending |
-| `PUT` | `/api/shipments/{id}/status` | Status bijwerken |
-| `DELETE` | `/api/shipments/{id}` | Zending annuleren |
-
-### Documenten
-| Method | Endpoint | Beschrijving |
-|--------|----------|--------------|
-| `POST` | `/api/shipments/{id}/documents` | Document uploaden |
-| `GET` | `/api/shipments/{id}/documents` | Documenten opvragen |
-| `GET` | `/api/documents/{id}/download` | Document downloaden |
-
-### Auth
-| Method | Endpoint | Beschrijving |
-|--------|----------|--------------|
-| `POST` | `/api/auth/login` | JWT token ophalen |
-| `POST` | `/api/auth/register` | Gebruiker registreren |
-
----
-
-## Project structuur
-
-```
-src/
-├── Domain/                         # Businesslogica — geen externe dependencies
-│   ├── Entities/
-│   │   ├── Shipment.cs
-│   │   ├── ShipmentStatusHistory.cs
-│   │   └── Document.cs
-│   ├── Enums/
-│   │   └── ShipmentStatus.cs
-│   ├── ValueObjects/
-│   │   └── TrackingNumber.cs
-│   └── Exceptions/
-│       └── DomainException.cs
-│
-├── Application/                    # Use cases — afhankelijk van Domain
-│   ├── Common/
-│   │   ├── Interfaces/             # IShipmentRepository, IBlobStorageService...
-│   │   ├── Behaviours/             # Logging, Validation pipeline behaviours
-│   │   └── Mappings/               # AutoMapper profiles
-│   └── Features/
-│       ├── Shipments/
-│       │   ├── Commands/           # CreateShipment, UpdateStatus, Delete
-│       │   └── Queries/            # GetShipment, GetShipments (gefilterd)
-│       └── Documents/
-│           ├── Commands/           # UploadDocument
-│           └── Queries/            # GetDocuments
-│
-├── Infrastructure/                 # Externe systemen
-│   ├── Persistence/
-│   │   ├── ApplicationDbContext.cs
-│   │   ├── Configurations/         # EF Core Fluent API per entity
-│   │   └── Migrations/
-│   ├── Repositories/               # Concrete implementaties
-│   └── Services/
-│       ├── Azure/                  # BlobStorageService, ServiceBusPublisher
-│       └── Auth/                   # JwtTokenService
-│
-└── WebAPI/                         # Entry point
-    ├── Controllers/
-    ├── Middleware/                  # GlobalExceptionHandler
-    └── Extensions/                 # DI registratie per laag
-
-mobile/
-└── ShipmentApp.Maui/              # .NET MAUI cross-platform app
-
-tests/
-├── Unit/                          # xUnit + Moq — snel, geïsoleerd
-└── Integration/                   # WebApplicationFactory — end-to-end
+```bash
+dotnet test ShipmentTracking.sln
 ```
 
----
+The Testcontainers test starts an isolated SQL Server container, so Docker must be running. Use `dotnet test --filter "Category!=Container"` for the fast, Docker-free suite.
 
-## Architectuurbeslissingen (ADR)
+## CI/CD and deployment
 
-### ADR-001: Clean Architecture
-**Beslissing:** Domain en Application kennen geen Infrastructure.  
-**Reden:** Testbaarheid en vervangbaarheid van externe systemen (mock Azure services in tests).
+The GitHub Actions workflow restores, builds, runs the test suite (including Testcontainers) and validates the production Docker image on every push and pull request. A manual `workflow_dispatch` deployment job builds the same image, pushes it to Azure Container Registry and updates an Azure Container App. Configure `AZURE_CREDENTIALS`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_NAME` and `AZURE_ACR_NAME` as repository secrets/variables before using it.
 
-### ADR-002: CQRS via MediatR
-**Beslissing:** Elke use case is een aparte Command of Query class.  
-**Reden:** Duidelijke verantwoordelijkheden, eenvoudig uitbreidbaar zonder bestaande code te breken.
+## Key decisions
 
-### ADR-003: Repository pattern
-**Beslissing:** Geen directe EF Core DbContext in Application-laag.  
-**Reden:** Application definieert interfaces, Infrastructure implementeert ze — betere testbaarheid.
-
-### ADR-004: Soft delete
-**Beslissing:** Zendingen worden nooit fysiek verwijderd (`IsDeleted` flag + query filter).  
-**Reden:** Audit trail voor logistieke compliance.
-
----
-
-## CI/CD
-
-GitHub Actions pipeline draait automatisch bij elke push:
-1. Build de solution
-2. Run alle unit- en integratietests
-3. Publiceer test coverage badge
-
-[![CI](https://github.com/jouw-naam/shipment-tracking-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/jouw-naam/shipment-tracking-platform/actions)
-
----
-
-## Roadmap
-
-- [ ] SignalR voor real-time statusupdates
-- [ ] Background worker voor Service Bus events
-- [ ] .NET MAUI offline-first met sync
-- [ ] Azure Container Apps deployment
-- [ ] Rate limiting & API versioning
+- **Clean Architecture:** Domain and Application do not depend on infrastructure implementations.
+- **CQRS:** request handlers keep shipment commands and read models isolated.
+- **Idempotency at the HTTP boundary:** retry safety is persisted with a unique request scope/key constraint.
+- **Cache-aside:** shipment details are cached for five minutes and invalidated after status changes.
+- **Async events:** publishing and consuming Service Bus messages are separated from HTTP request processing.

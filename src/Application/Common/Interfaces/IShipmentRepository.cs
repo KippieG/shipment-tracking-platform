@@ -37,6 +37,14 @@ public interface IShipmentEventPublisher
     Task PublishStatusChangedAsync(Guid shipmentId, string trackingNumber, string newStatus, CancellationToken ct = default);
 }
 
+/// <summary>Small abstraction so the application layer is not coupled to Redis.</summary>
+public interface IShipmentCache
+{
+    Task<string?> GetAsync(string key, CancellationToken ct = default);
+    Task SetAsync(string key, string value, TimeSpan ttl, CancellationToken ct = default);
+    Task RemoveAsync(string key, CancellationToken ct = default);
+}
+
 public interface ICurrentUserService
 {
     string UserId { get; }

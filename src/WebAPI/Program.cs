@@ -14,6 +14,9 @@ using ShipmentTracking.Infrastructure.Services.Azure;
 using ShipmentTracking.WebAPI.Middleware;
 using System.Reflection;
 using System.Text;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using ShipmentTracking.Infrastructure.Services.Caching;
+using ShipmentTracking.WebAPI.BackgroundServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +34,14 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         sql => sql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
+
+// Redis is optional for local development; production should supply Redis__ConnectionString.
+var redisConnection = builder.Configuration["Redis:ConnectionString"];
+if (string.IsNullOrWhiteSpace(redisConnection))
+    builder.Services.AddDistributedMemoryCache();
+else
+    builder.Services.AddStackExchangeRedisCache(options => options.Configuration = redisConnection);
+builder.Services.AddSingleton<IShipmentCache, RedisShipmentCache>();
 
 // ── MediatR + Pipeline behaviours ────────────────────────────────────────────
 builder.Services.AddMediatR(cfg =>
@@ -52,7 +63,11 @@ builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 
 // ── Azure Services ───────────────────────────────────────────────────────────
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
-builder.Services.AddSingleton<IShipmentEventPublisher, ServiceBusPublisher>();
+if (string.IsNullOrWhiteSpace(builder.Configuration["Azure:ServiceBus:ConnectionString"]))
+    builder.Services.AddSingleton<IShipmentEventPublisher, NoopShipmentEventPublisher>();
+else
+    builder.Services.AddSingleton<IShipmentEventPublisher, ServiceBusPublisher>();
+builder.Services.AddHostedService<ShipmentEventsWorker>();
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -114,12 +129,18 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHealthChecks().AddDbContextCheck<ApplicationDbContext>("sql");
+
+// Application Insights exports traces, dependency telemetry and request metrics when configured.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+    builder.Services.AddOpenTelemetry().UseAzureMonitor();
 
 // ─────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
 // ── Middleware pipeline ───────────────────────────────────────────────────────
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<IdempotencyMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -136,6 +157,8 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/ready");
 
 // ── Auto-migratie bij startup (dev only, niet in-memory) ─────────────────────
 if (app.Environment.IsDevelopment())
@@ -143,7 +166,13 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     if (dbContext.Database.IsRelational())
-        await dbContext.Database.MigrateAsync();
+    {
+        // The repository starts clean locally; production deployments run EF migrations explicitly.
+        if (dbContext.Database.GetMigrations().Any())
+            await dbContext.Database.MigrateAsync();
+        else
+            await dbContext.Database.EnsureCreatedAsync();
+    }
 }
 
 await app.RunAsync();

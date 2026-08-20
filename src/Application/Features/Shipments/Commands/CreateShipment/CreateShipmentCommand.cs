@@ -53,7 +53,8 @@ public sealed class CreateShipmentValidator : AbstractValidator<CreateShipmentCo
 // --- Handler ---
 public sealed class CreateShipmentHandler(
     IShipmentRepository repository,
-    ICurrentUserService currentUser)
+    ICurrentUserService currentUser,
+    IShipmentCache cache)
     : IRequestHandler<CreateShipmentCommand, CreateShipmentResult>
 {
     public async Task<CreateShipmentResult> Handle(
@@ -71,6 +72,7 @@ public sealed class CreateShipmentHandler(
 
         await repository.AddAsync(shipment, ct);
         await repository.SaveChangesAsync(ct);
+        await cache.RemoveAsync("shipments:list", ct);
 
         return new CreateShipmentResult(shipment.Id, shipment.TrackingNumber);
     }

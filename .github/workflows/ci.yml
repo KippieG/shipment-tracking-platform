@@ -2,81 +2,57 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [master]
   pull_request:
-    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the API to Azure Container Apps
+        required: false
+        default: false
+        type: boolean
 
-env:
-  DOTNET_VERSION: '8.0.x'
-  DOTNET_NOLOGO: true
-  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET ${{ env.DOTNET_VERSION }}
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Restore dependencies
-        run: dotnet restore ShipmentTracking.sln
-
-      - name: Unit tests
-        run: |
-          dotnet test tests/Unit/Unit.csproj \
-            --configuration Release \
-            --logger "trx;LogFileName=unit-results.trx" \
-            --collect:"XPlat Code Coverage" \
-            --results-directory ./coverage
-
-      - name: Integration tests
-        run: |
-          dotnet test tests/Integration/Integration.csproj \
-            --configuration Release \
-            --logger "trx;LogFileName=integration-results.trx" \
-            --results-directory ./coverage
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
+          dotnet-version: 8.0.x
+      - run: dotnet restore ShipmentTracking.sln
+      - run: dotnet build ShipmentTracking.sln --configuration Release --no-restore
+      - run: dotnet test ShipmentTracking.sln --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
-          path: ./coverage/**/*.trx
+          path: "**/TestResults/*.trx"
+          if-no-files-found: ignore
+      - run: docker build --file src/WebAPI/Dockerfile --tag shipment-tracking-api:${{ github.sha }} .
 
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: ./coverage/**/coverage.cobertura.xml
-
-  code-quality:
-    name: Code Quality
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: test
     runs-on: ubuntu-latest
-    needs: build-and-test
-
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Restore
-        run: dotnet restore ShipmentTracking.sln
-
-      - name: Build (check voor warnings als errors)
-        run: |
-          dotnet build ShipmentTracking.sln \
-            --no-restore \
-            --configuration Release \
-            /p:TreatWarningsAsErrors=false \
-            /p:Nullable=enable
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - uses: azure/docker-login@v2
+        with:
+          login-server: ${{ vars.AZURE_ACR_NAME }}.azurecr.io
+          username: ${{ secrets.AZURE_ACR_USERNAME }}
+          password: ${{ secrets.AZURE_ACR_PASSWORD }}
+      - run: |
+          docker build --file src/WebAPI/Dockerfile --tag ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }} .
+          docker push ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }}
+          az containerapp update --name ${{ vars.AZURE_CONTAINER_APP_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --image ${{ vars.AZURE_ACR_NAME }}.azurecr.io/shipment-tracking:${{ github.sha }}
