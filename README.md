@@ -17,7 +17,7 @@ Production-minded .NET 8 platform for creating, tracking and auditing logistics 
 - `/health` and `/ready` endpoints
 - Upload signature validation; production deployments should additionally enable Defender for Storage malware scanning
 - Unit tests, HTTP integration tests, idempotency coverage and a SQL Server Testcontainers test
-- Docker Compose for SQL Server, Redis, Azurite and the API
+- Docker Compose for SQL Server, Redis, Azurite and the API; Azure uses the in-memory cache fallback by default to avoid a dedicated Redis cost
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Use environment variables, Key Vault or user secrets; do not commit production c
 | Setting | Purpose |
 |---|---|
 | `ConnectionStrings__DefaultConnection` | SQL Server connection string |
-| `Redis__ConnectionString` | Redis endpoint; falls back to in-memory cache locally |
+| `Redis__ConnectionString` | Optional Redis endpoint; without it the API uses in-memory cache (the Azure cost-conscious default) |
 | `Azure__ServiceBus__ConnectionString` | Enables Service Bus publishing and worker consumption |
 | `Azure__BlobStorage__ConnectionString` | Blob Storage/Azurite connection string |
 | `JwtSettings__Secret` | 32+ character JWT signing secret |

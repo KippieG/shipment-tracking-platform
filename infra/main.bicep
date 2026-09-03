@@ -4,8 +4,6 @@ param location string = resourceGroup().location
 param namePrefix string = 'shipment${uniqueString(resourceGroup().id)}'
 @secure()
 param sqlAdministratorPassword string
-@secure()
-param jwtSecret string
 @minLength(1)
 param sqlAdministratorLogin string = 'shipmentadmin'
 
@@ -81,18 +79,11 @@ resource shipmentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-previe
   properties: { lockDuration: 'PT1M', maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
 }
 
-resource redis 'Microsoft.Cache/redis@2023-08-01' = {
-  name: '${namePrefix}-redis'
-  location: location
-  tags: tags
-  properties: { sku: { name: 'Basic', family: 'C', capacity: 0 }, minimumTlsVersion: '1.2', enableNonSslPort: false }
-}
-
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: '${namePrefix}-env'
   location: location
   tags: tags
-  properties: { appLogsConfiguration: { destination: 'log-analytics', logAnalyticsConfiguration: { customerId: logs.properties.customerId, sharedKey: listKeys(logs.id, '2023-09-01').primarySharedKey } } }
+  properties: { appLogsConfiguration: { destination: 'log-analytics', logAnalyticsConfiguration: { customerId: logs.properties.customerId, sharedKey: logs.listKeys().primarySharedKey } } }
 }
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {

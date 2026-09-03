@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15537091567314374798"
+      "templateHash": "1264088949960968196"
     }
   },
   "parameters": {
@@ -22,9 +22,6 @@
       "minLength": 3
     },
     "sqlAdministratorPassword": {
-      "type": "securestring"
-    },
-    "jwtSecret": {
       "type": "securestring"
     },
     "sqlAdministratorLogin": {
@@ -155,22 +152,6 @@
       "dependsOn": [
         "[resourceId('Microsoft.ServiceBus/namespaces', format('{0}-sb', parameters('namePrefix')))]"
       ]
-    },
-    {
-      "type": "Microsoft.Cache/redis",
-      "apiVersion": "2023-08-01",
-      "name": "[format('{0}-redis', parameters('namePrefix'))]",
-      "location": "[parameters('location')]",
-      "tags": "[variables('tags')]",
-      "properties": {
-        "sku": {
-          "name": "Basic",
-          "family": "C",
-          "capacity": 0
-        },
-        "minimumTlsVersion": "1.2",
-        "enableNonSslPort": false
-      }
     },
     {
       "type": "Microsoft.App/managedEnvironments",
