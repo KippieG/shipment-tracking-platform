@@ -11,7 +11,7 @@ namespace ShipmentTracking.Tests.Integration;
 [Trait("Category", "Container")]
 public sealed class SqlServerContainerTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sql = new MsSqlBuilder().Build();
+    private readonly MsSqlContainer _sql = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
 
     public async Task InitializeAsync() => await _sql.StartAsync();
     public async Task DisposeAsync() => await _sql.DisposeAsync();

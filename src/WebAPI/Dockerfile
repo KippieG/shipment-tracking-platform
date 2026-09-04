@@ -11,8 +11,8 @@ RUN dotnet publish "src/WebAPI/WebAPI.csproj" -c Release -o /app/publish /p:UseA
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
-RUN addgroup --system app && adduser --system --ingroup app app
 COPY --from=build /app/publish .
+# The official .NET runtime image ships the unprivileged `app` user.
 USER app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
