@@ -6,6 +6,8 @@ param namePrefix string = 'shipment${uniqueString(resourceGroup().id)}'
 param sqlAdministratorPassword string
 @minLength(1)
 param sqlAdministratorLogin string = 'shipmentadmin'
+@description('Creates Azure Service Bus only when asynchronous Azure messaging is required.')
+param enableServiceBus bool = false
 
 var tags = { application: 'shipment-tracking-platform', managedBy: 'bicep' }
 
@@ -65,15 +67,15 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   properties: { collation: 'SQL_Latin1_General_CP1_CI_AS' }
 }
 
-resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
+resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = if (enableServiceBus) {
   name: '${namePrefix}-sb'
   location: location
   tags: tags
-  sku: { name: 'Standard', tier: 'Standard' }
+  sku: { name: 'Basic', tier: 'Basic' }
   properties: { minimumTlsVersion: '1.2' }
 }
 
-resource shipmentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+resource shipmentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = if (enableServiceBus) {
   parent: serviceBus
   name: 'shipment-events'
   properties: { lockDuration: 'PT1M', maxDeliveryCount: 10, deadLetteringOnMessageExpiration: true }
@@ -95,11 +97,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: environment.id
     configuration: { ingress: { external: true, targetPort: 8080, transport: 'auto' }, activeRevisionsMode: 'Single' }
     template: {
-      containers: [{ name: 'api', image: 'mcr.microsoft.com/dotnet/aspnet:8.0', resources: { cpu: json('0.5'), memory: '1Gi' }, env: [
+      containers: [{ name: 'api', image: 'mcr.microsoft.com/dotnet/aspnet:10.0', resources: { cpu: json('0.25'), memory: '0.5Gi' }, env: [
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
         { name: 'KeyVault__Uri', value: keyVault.properties.vaultUri }
       ] }]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: 0, maxReplicas: 1 }
     }
   }
 }

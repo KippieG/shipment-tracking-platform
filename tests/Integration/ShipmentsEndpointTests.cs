@@ -3,7 +3,11 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ShipmentTracking.Application.Features.Shipments.Commands.CreateShipment;
@@ -43,18 +47,26 @@ public sealed class TestAuthHandler(
 // Vervangt de echte database door een in-memory versie
 public sealed class ShipmentTrackingFactory : WebApplicationFactory<Program>
 {
+    private static readonly InMemoryDatabaseRoot DatabaseRoot = new();
+    private readonly string _databaseName = $"TestDb_{Guid.NewGuid():N}";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureServices(services =>
         {
-            // Verwijder de echte DbContext registratie
-            var descriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>));
-            if (descriptor != null) services.Remove(descriptor);
+            // Remove all production registrations before selecting the in-memory provider.
+            // EF Core 10 registers IDbContextOptionsConfiguration separately.
+            services.RemoveAll(typeof(DbContextOptions<ApplicationDbContext>));
+            services.RemoveAll(typeof(ApplicationDbContext));
+            services.RemoveAll(typeof(IDbContextOptionsConfiguration<ApplicationDbContext>));
 
             // Voeg in-memory database toe
             services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb_" + Guid.NewGuid()));
+                options.UseInMemoryDatabase(_databaseName, DatabaseRoot));
+
+            // Tests must never attempt the developer-machine Redis endpoint.
+            services.RemoveAll(typeof(IDistributedCache));
+            services.AddDistributedMemoryCache();
 
             // Zorg dat de DB aangemaakt is
             var sp = services.BuildServiceProvider();

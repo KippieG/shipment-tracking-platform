@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/phlppgdfry/shipment-tracking-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/phlppgdfry/shipment-tracking-platform/actions/workflows/ci.yml)
 
-Production-minded .NET 8 platform for creating, tracking and auditing logistics shipments. The API follows Clean Architecture and CQRS, while local infrastructure mirrors the Azure services used in deployment.
+Production-minded .NET 10 platform for creating, tracking and auditing logistics shipments. The API follows Clean Architecture and CQRS, while local infrastructure mirrors the Azure services used in deployment.
 
 ## What is implemented
 
-- ASP.NET Core 8 API, CQRS/MediatR, FluentValidation and EF Core SQL Server
+- ASP.NET Core 10 API, CQRS/MediatR, FluentValidation and EF Core SQL Server
 - JWT authentication, global error responses and soft deletion
 - Identity registration/login, password policy, roles and policy-protected write endpoints
 - Azure Blob Storage document abstraction and transactional Service Bus outbox
@@ -33,7 +33,7 @@ Application Insights (traces, metrics and dependencies)
 
 ## Run locally
 
-Prerequisites: Docker Desktop and .NET 8 SDK.
+Prerequisites: Docker Desktop and .NET 10 SDK.
 
 ```bash
 git clone https://github.com/phlppgdfry/shipment-tracking-platform.git
@@ -86,7 +86,7 @@ The Testcontainers test starts an isolated SQL Server container, so Docker must 
 
 ## CI/CD and deployment
 
-The GitHub Actions workflow restores, builds, runs the test suite (including Testcontainers) and validates the production Docker image on every push and pull request. A manual `workflow_dispatch` deployment job builds the same image, pushes it to Azure Container Registry and updates an Azure Container App. It uses GitHub-to-Azure OIDC: configure `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_NAME` and `AZURE_ACR_NAME` as repository variables, then federate the GitHub environment in Entra ID.
+The GitHub Actions workflow restores, builds, runs the test suite (including Testcontainers) and validates the production Docker image on every push and pull request. A manual `workflow_dispatch` deployment job builds the same image, pushes it to Azure Container Registry and updates an Azure Container App. It uses GitHub-to-Azure OIDC: configure `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_NAME` and `AZURE_ACR_NAME` as repository variables, then federate the GitHub environment in Entra ID. The Bicep defaults to zero Container App replicas and disables Service Bus; enable paid components only when required.
 
 The infrastructure is declared in [infra/main.bicep](infra/main.bicep). Deployment and recovery procedures are in [docs/runbook.md](docs/runbook.md); the reliability design is in [docs/architecture.md](docs/architecture.md).
 

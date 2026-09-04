@@ -23,4 +23,4 @@ The status-command handler adds the state change and the serialized event to the
 
 ## Deployment model
 
-`infra/main.bicep` declares Azure Container Apps, SQL Database, Key Vault, Application Insights/Log Analytics, Storage and Service Bus. Redis is deliberately omitted from the cost-conscious Azure profile. Store the generated connection strings and JWT secret in Key Vault. Before the first production release, apply the checked-in EF migration and grant the Container App identity access to Key Vault, Blob Storage and Service Bus.
+`infra/main.bicep` declares Azure Container Apps, SQL Database, Key Vault, Application Insights/Log Analytics and Storage. Redis is deliberately omitted; Service Bus is opt-in and disabled by default; the Container App scales to zero when idle. Store generated connection strings and the JWT secret in Key Vault. Before a production release, apply the checked-in EF migration and grant the Container App identity access to Key Vault, Blob Storage and Service Bus when it is enabled.

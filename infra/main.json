@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "1264088949960968196"
+      "templateHash": "4047906695139398840"
     }
   },
   "parameters": {
@@ -28,6 +28,13 @@
       "type": "string",
       "defaultValue": "shipmentadmin",
       "minLength": 1
+    },
+    "enableServiceBus": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Creates Azure Service Bus only when asynchronous Azure messaging is required."
+      }
     }
   },
   "variables": {
@@ -127,20 +134,22 @@
       ]
     },
     {
+      "condition": "[parameters('enableServiceBus')]",
       "type": "Microsoft.ServiceBus/namespaces",
       "apiVersion": "2022-10-01-preview",
       "name": "[format('{0}-sb', parameters('namePrefix'))]",
       "location": "[parameters('location')]",
       "tags": "[variables('tags')]",
       "sku": {
-        "name": "Standard",
-        "tier": "Standard"
+        "name": "Basic",
+        "tier": "Basic"
       },
       "properties": {
         "minimumTlsVersion": "1.2"
       }
     },
     {
+      "condition": "[parameters('enableServiceBus')]",
       "type": "Microsoft.ServiceBus/namespaces/queues",
       "apiVersion": "2022-10-01-preview",
       "name": "[format('{0}/{1}', format('{0}-sb', parameters('namePrefix')), 'shipment-events')]",
@@ -195,10 +204,10 @@
           "containers": [
             {
               "name": "api",
-              "image": "mcr.microsoft.com/dotnet/aspnet:8.0",
+              "image": "mcr.microsoft.com/dotnet/aspnet:10.0",
               "resources": {
-                "cpu": "[json('0.5')]",
-                "memory": "1Gi"
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
               },
               "env": [
                 {
@@ -213,8 +222,8 @@
             }
           ],
           "scale": {
-            "minReplicas": 1,
-            "maxReplicas": 3
+            "minReplicas": 0,
+            "maxReplicas": 1
           }
         }
       },
